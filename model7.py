@@ -32,17 +32,17 @@ def _risk_prob(model, scaler, X_cols, row_dict):
     df_scaled = scaler.transform(df[X_cols])
     return float(model.predict_proba(df_scaled)[0][1])
 
-
 # =============================================================================
 # STEP 0 - LOAD DATASET
 # =============================================================================
 
-def load_data(file_path='final_expanded_water_dataset.xlsx'):
+def load_data(file_path='WaterSystem_Dataset.xlsx'):
     df = pd.read_excel(file_path)
     print('='*80)
     print('SMART WATER SUPPLY DISRUPTION AND SHORTAGE PREDICTION')
     print('='*80)
     print(f'Dataset size: {df.shape}')
+    print(df.head())
     print()
     return df
 
@@ -220,13 +220,70 @@ def engineer_features(df):
 
     return df
 
+# =============================================================================
+# FEATURE DISTRIBUTION VISUALIZATION
+# =============================================================================
+def plot_feature_histograms(df):
+    import matplotlib.pyplot as plt
+
+    cols = [
+        'Rainfall(mm)',
+        'Temperature(C)',
+        'Soil_Type',
+        'Population',
+        'Population_Demand',
+        'Pipe_Age',
+        'Pipe_Diameter(mm)',
+        'Water_Pressure(psi)',
+        'Flow_Rate(L/min)',
+        'pH_Level',
+        'Leakage_History',
+        'Maintenance_History',
+        'Water_Risk',
+        'Demand_Supply_Ratio',
+        'Pressure_Efficiency',
+        'Climate_Stress',
+        'pH_Deviation'
+    ]
+
+    plt.figure(figsize=(15, 14))
+
+    for i, col in enumerate(cols, 1):
+        plt.subplot(5, 4, i)
+
+        plt.hist(
+            df[col],
+            bins=12,
+            edgecolor='black'
+        )
+
+        plt.title(
+            col,
+            fontsize=9,
+            fontweight='bold'
+        )
+
+        plt.grid(True, alpha=0.35)
+        plt.xticks(fontsize=7)
+        plt.yticks(fontsize=7)
+        plt.xlabel('')
+        plt.ylabel('')
+
+    plt.tight_layout(pad=2.0)
+    plt.show()
+
 
 # =============================================================================
 # STEP 3 - SPLIT & SCALE
 # =============================================================================
 
 def prepare_data(df):
-    X = df.drop('Water_Risk', axis=1)
+    # remove identifier columns
+    X = df.drop(
+        ['Water_Risk'],
+        axis=1
+    )
+
     y = df['Water_Risk']
 
     print('Class Distribution:')
@@ -440,6 +497,38 @@ def final_evaluation(best_model, X_test_scaled, y_test):
 
     return y_pred, cm, report
 
+# =============================================================================
+# CONFUSION MATRIX PLOT (TOP 3 MODELS)
+# =============================================================================
+# =============================================================================
+# SEPARATE CONFUSION MATRIX FIGURES
+# =============================================================================
+def plot_confusion_matrix_single(model, model_name, X_test_scaled, y_test):
+    from sklearn.metrics import confusion_matrix
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    y_pred = model.predict(X_test_scaled)
+    cm = confusion_matrix(y_test, y_pred)
+
+    plt.figure(figsize=(6, 5))
+
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt='d',
+        cmap='Blues',
+        cbar=False,
+        xticklabels=['No Risk', 'Risk'],
+        yticklabels=['No Risk', 'Risk']
+    )
+
+    plt.title(f'{model_name} - Confusion Matrix')
+    plt.xlabel('Predicted Label')
+    plt.ylabel('Actual Label')
+    plt.tight_layout()
+    plt.show()
+
 
 # =============================================================================
 # STEP 9 - ROC / AUC ANALYSIS
@@ -534,13 +623,26 @@ def run_shap_analysis(best_model, X_train, X_test):
 
 def recompute_engineered_features(df_row):
     df_row = df_row.copy()
-    df_row['Demand_Supply_Ratio'] = df_row['Population_Demand'] / (df_row['Flow_Rate(L/min)'] + 1e-6)
-    df_row['Pressure_Per_Diameter'] = df_row['Water_Pressure(psi)'] / (df_row['Pipe_Diameter(mm)'] + 1e-6)
-    df_row['Age_Pressure_Interaction'] = df_row['Pipe_Age'] * df_row['Water_Pressure(psi)']
-    df_row['Risk_Score'] = df_row['Leakage_History'] * (4 - df_row['Maintenance_History'])
-    df_row['pH_Deviation'] = abs(df_row['pH_Level'] - 7.0)
-    df_row['Population_Per_Flow'] = df_row['Population'] / (df_row['Flow_Rate(L/min)'] + 1e-6)
-    df_row['Rainfall_Temp_Stress'] = df_row['Temperature(C)'] / (df_row['Rainfall(mm)'] + 1e-6)
+
+    df_row['Demand_Supply_Ratio'] = (
+        df_row['Population_Demand'] /
+        (df_row['Flow_Rate(L/min)'] + 1)
+    )
+
+    df_row['Pressure_Efficiency'] = (
+        df_row['Water_Pressure(psi)'] *
+        df_row['Pipe_Diameter(mm)']
+    ) / (df_row['Pipe_Age'] + 1)
+
+    df_row['Climate_Stress'] = (
+        df_row['Temperature(C)'] /
+        (df_row['Rainfall(mm)'] + 1)
+    )
+
+    df_row['pH_Deviation'] = abs(
+        df_row['pH_Level'] - 7
+    )
+
     return df_row
 
 
@@ -1112,21 +1214,158 @@ def custom_case_testing_engine(file_path, df_train, best_model, scaler, X):
 
     return result_df
 
+#================Prediction Comparision========================#
+
+def compare_models_by_case_id(file_path, case_id, tuned_models, scaler, X):
+    print('\n' + '='*90)
+    print(f'MODEL COMPARISON FOR {case_id}')
+    print('='*90)
+
+    # Load custom file
+    df_case = pd.read_excel(file_path)
+
+    # Find selected case
+    row = df_case[df_case['Case_ID'] == case_id]
+
+    if row.empty:
+        print('Case_ID not found.')
+        return
+
+    row = row.iloc[0].copy()
+
+    # Remove Case_ID
+    features = row.drop('Case_ID').to_frame().T
+
+    # Recompute engineered features
+    features = recompute_engineered_features(features)
+
+    # Match training columns
+    features = features[X.columns]
+
+    # Scale
+    features_scaled = scaler.transform(features)
+
+    predictions = []
+
+    print('\nPredictions:')
+    print('-'*70)
+
+    for name, model in tuned_models.items():
+        prob = model.predict_proba(features_scaled)[0][1]
+        pred = model.predict(features_scaled)[0]
+
+        label = 'YES' if pred == 1 else 'NO'
+        predictions.append(label)
+
+        print(f'{name:<20} : {label} ({prob*100:.2f}%)')
+
+    # Consensus
+    yes_count = predictions.count('YES')
+    no_count = predictions.count('NO')
+
+    print('\n' + '-'*70)
+
+    if yes_count == 3:
+        print('Consensus        : STRONG AGREEMENT (YES)')
+        print('Final Prediction : WATER RISK = YES')
+
+    elif no_count == 3:
+        print('Consensus        : STRONG AGREEMENT (NO)')
+        print('Final Prediction : WATER RISK = NO')
+
+    else:
+        print('Consensus        : MIXED PREDICTION')
+        print(f'YES votes = {yes_count}, NO votes = {no_count}')
+
+def plot_model_accuracy(results_df):
+    import matplotlib.pyplot as plt
+
+    plt.figure(figsize=(10, 6))
+
+    plt.bar(
+        results_df['Model'],
+        results_df['Test Accuracy'] * 100,
+        edgecolor='black'
+    )
+
+    plt.title('Model-wise Test Accuracy Comparison')
+    plt.xlabel('Models')
+    plt.ylabel('Accuracy (%)')
+    plt.grid(axis='y', alpha=0.3)
+
+    for i, v in enumerate(results_df['Test Accuracy'] * 100):
+        plt.text(i, v+0.2, f'{v:.2f}%', ha='center')
+
+    plt.tight_layout()
+    plt.show()
+
+# =============================================================================
+# TRAINING ACCURACY BAR CHART
+# =============================================================================
+def plot_training_accuracy(results_df):
+    import matplotlib.pyplot as plt
+
+    plt.figure(figsize=(10,6))
+
+    plt.bar(
+        results_df['Model'],
+        results_df['Train Accuracy'] * 100,
+        edgecolor='black'
+    )
+
+    plt.title(
+        'Model-wise Training Accuracy Comparison',
+        fontsize=14,
+        fontweight='bold'
+    )
+
+    plt.xlabel('Models', fontsize=12)
+    plt.ylabel('Training Accuracy (%)', fontsize=12)
+
+    plt.ylim(80,101)
+    plt.grid(axis='y', alpha=0.3)
+
+    plt.xticks(rotation=20)
+
+    for i, v in enumerate(results_df['Train Accuracy'] * 100):
+        plt.text(
+            i,
+            v + 0.2,
+            f'{v:.2f}%',
+            ha='center',
+            fontsize=10
+        )
+
+    plt.tight_layout()
+    plt.show()
+
 # =============================================================================
 # MAIN EXECUTION
 # =============================================================================
 
 if __name__ == '__main__':
     df = load_data()
+    ##pd.set_option('display.max_columns', None)
+
+    ##print('\nDATASET SAMPLE PREVIEW')
+    ##print('='*100)
+    ##print(df.head())
+ 
+
     df = clean_data(df)
     df = rebuild_target(df)
     df = engineer_features(df)
+    plot_feature_histograms(df)
 
     X, y, X_train, X_test, y_train, y_test, X_train_scaled, X_test_scaled, scaler = prepare_data(df)
 
     trained_models = train_models(X_train_scaled, y_train, X_test_scaled, y_test)
 
     results_df = compare_models(trained_models, X_train_scaled, y_train, X_test_scaled, y_test)
+
+    plot_training_accuracy(results_df)
+
+    plot_model_accuracy(results_df)
 
     tuned_models = tune_top_models(results_df, X_train_scaled, y_train)
 
@@ -1150,6 +1389,9 @@ if __name__ == '__main__':
         target_names=['No Risk', 'Risk']
     ))
 
+    print('Confusion Matrix:')
+    print(confusion_matrix(y_test, rf_pred))
+
 
 # GRADIENT BOOSTING
     print('\n' + '='*80)
@@ -1165,9 +1407,33 @@ if __name__ == '__main__':
         target_names=['No Risk', 'Risk']
     ))
 
+    print('Confusion Matrix:')
+    print(confusion_matrix(y_test, gb_pred))
+
     
 
     y_pred, cm, report = final_evaluation(best_model, X_test_scaled, y_test)
+
+    plot_confusion_matrix_single(
+    tuned_models['Random Forest'],
+    'Random Forest',
+    X_test_scaled,
+    y_test
+)
+
+    plot_confusion_matrix_single(
+    tuned_models['Gradient Boosting'],
+    'Gradient Boosting',
+    X_test_scaled,
+    y_test
+)
+
+    plot_confusion_matrix_single(
+    tuned_models['XGBoost'],
+    'XGBoost',
+    X_test_scaled,
+    y_test
+)
 
     plot_roc_curves(tuned_models, X_test_scaled, y_test)
     plot_precision_recall(tuned_models, X_test_scaled, y_test)
@@ -1182,6 +1448,12 @@ if __name__ == '__main__':
     scaler,
     X
 )
-
-    print('PROJECT EXECUTION COMPLETED SUCCESSFULLY')
+    
+    compare_models_by_case_id(
+    'custom_water_test_cases_50_with_soil.xlsx',
+    'Case_17',
+    tuned_models,
+    scaler,
+    X
+)
 
