@@ -177,9 +177,19 @@ def rebuild_target(df):
         0.01 * extreme_heat
     )
 
+    #noise = np.random.normal(
+    #    loc=0,
+    #    scale=0.01,
+    #    size=len(df)
+    #)
+
+    #total_score = total_score + noise
+
     threshold = total_score.quantile(0.62)
 
-    df['Water_Risk'] = (total_score > threshold).astype(int)
+    df['Water_Risk'] = (
+        total_score > threshold
+    ).astype(int)
 
     print('STEP 2 - Advanced Nonlinear Water_Risk Rebuilt')
     print(df['Water_Risk'].value_counts())
@@ -315,16 +325,26 @@ def prepare_data(df):
 
 def train_models(X_train_scaled, y_train, X_test_scaled, y_test):
     models = {
-        'Decision Tree': DecisionTreeClassifier(random_state=42),
-        'Random Forest': RandomForestClassifier(n_estimators=200, random_state=42),
+        'Decision Tree': DecisionTreeClassifier(
+    max_depth=12,
+    min_samples_leaf=4,
+    random_state=42
+),
+
+'Random Forest': RandomForestClassifier(
+    n_estimators=180,
+    min_samples_leaf=3,
+    random_state=42
+),
         'Logistic Regression': LogisticRegression(max_iter=1000, random_state=42),
-        'Gradient Boosting': GradientBoostingClassifier(n_estimators=200, random_state=42),
+        'Gradient Boosting': GradientBoostingClassifier(n_estimators=130,
+    random_state=42),
         'XGBoost': XGBClassifier(
-            n_estimators=200,
-            max_depth=4,
-            learning_rate=0.1,
-            eval_metric='logloss',
-            random_state=42
+            n_estimators=120,
+    max_depth=4,
+    learning_rate=0.08,
+    eval_metric='logloss',
+    random_state=42
         )
     }
 
